@@ -123,7 +123,9 @@ fun HomeScreen(
         if (vm.activeChip != null) {
             item { SectionTitle(vm.activeChip!!) }
             itemsIndexed(vm.chipResults) { i, s ->
-                SongRow(s, vm.current?.id == s.id, vm.isPlaying, onClick = { vm.play(vm.chipResults, i) })
+                SongRow(s, vm.current?.id == s.id, vm.isPlaying, onClick = { vm.play(vm.chipResults, i) }) {
+                    AddToPlaylistButton(vm, s)
+                }
             }
             return@LazyColumn
         }

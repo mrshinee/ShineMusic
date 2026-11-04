@@ -17,6 +17,8 @@ import androidx.media3.session.SessionToken
 import com.shinemusic.data.FavoritesStore
 import com.shinemusic.data.LrcLib
 import com.shinemusic.data.LyricLine
+import com.shinemusic.data.Playlist
+import com.shinemusic.data.PlaylistStore
 import com.shinemusic.data.SaavnApi
 import com.shinemusic.data.SpotifyApi
 import com.shinemusic.data.UpdateChecker
@@ -52,6 +54,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // ---- library
     val favorites = mutableStateListOf<Song>()
     val recents = mutableStateListOf<Song>()
+    val playlists = mutableStateListOf<Playlist>()
 
     // ---- player state
     var queue by mutableStateOf<List<Song>>(emptyList())
@@ -81,6 +84,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         reloadFavorites()
+        playlists.addAll(PlaylistStore.load(app))
         // notification / lock-screen favorite button changes land here too
         viewModelScope.launch { FavoritesStore.version.collect { reloadFavorites() } }
         loadList(prefs.getString("rec", null), recents)
@@ -363,6 +367,47 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         if (min > 0) sleepJob = viewModelScope.launch {
             delay(min * 60_000L); player.pause(); sleepMinutes = 0
         }
+    }
+
+    // ---------------- playlists
+    private fun savePlaylists() = PlaylistStore.save(getApplication<Application>(), playlists.toList())
+
+    /** Creates a playlist (optionally with a first song). Returns null if the name is blank. */
+    fun createPlaylist(name: String, first: Song? = null): Playlist? {
+        val n = name.trim()
+        if (n.isEmpty()) return null
+        val p = Playlist(java.util.UUID.randomUUID().toString(), n, listOfNotNull(first))
+        playlists.add(0, p)
+        savePlaylists()
+        return p
+    }
+
+    fun renamePlaylist(id: String, name: String) {
+        val i = playlists.indexOfFirst { it.id == id }
+        val n = name.trim()
+        if (i < 0 || n.isEmpty()) return
+        playlists[i] = playlists[i].copy(name = n)
+        savePlaylists()
+    }
+
+    fun deletePlaylist(id: String) {
+        if (playlists.removeAll { it.id == id }) savePlaylists()
+    }
+
+    /** @return false if the song was already in the playlist */
+    fun addToPlaylist(id: String, song: Song): Boolean {
+        val i = playlists.indexOfFirst { it.id == id }
+        if (i < 0 || playlists[i].songs.any { it.id == song.id }) return false
+        playlists[i] = playlists[i].copy(songs = playlists[i].songs + song)
+        savePlaylists()
+        return true
+    }
+
+    fun removeFromPlaylist(id: String, songId: String) {
+        val i = playlists.indexOfFirst { it.id == id }
+        if (i < 0) return
+        playlists[i] = playlists[i].copy(songs = playlists[i].songs.filter { it.id != songId })
+        savePlaylists()
     }
 
     // ---------------- library

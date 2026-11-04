@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -93,7 +94,8 @@ import com.shinemusic.ui.components.bounceClick
 import com.shinemusic.ui.components.glass
 import com.shinemusic.ui.components.rememberArtColor
 import com.shinemusic.ui.screens.HomeScreen
-import com.shinemusic.ui.screens.LibraryScreen
+import com.shinemusic.ui.screens.HistoryScreen
+import com.shinemusic.ui.screens.PlaylistScreen
 import com.shinemusic.ui.screens.PlayerScreen
 import com.shinemusic.ui.screens.SearchScreen
 import com.shinemusic.ui.theme.ShineTheme
@@ -101,7 +103,7 @@ import com.shinemusic.ui.theme.ShineTheme
 private enum class Tab(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Rounded.Explore),
     SEARCH("Search", Icons.Rounded.Search),
-    LIBRARY("Library", Icons.Rounded.Favorite),
+    PLAYLIST("Playlist", Icons.Rounded.PlaylistPlay),
     RECENT("Recent", Icons.Rounded.GridView)
 }
 
@@ -123,30 +125,6 @@ class MainActivity : ComponentActivity() {
         }
         setContent { ShineTheme { App(vm) } }
     }
-
-    private var askedAboutNotifications = false
-
-    override fun onResume() {
-        super.onResume()
-        // If notifications are switched off (denied permission, or blocked in vivo settings) the
-        // lock-screen controls / island can never appear - tell the user and open the right page.
-        if (!askedAboutNotifications &&
-            !androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()
-        ) {
-            askedAboutNotifications = true
-            android.app.AlertDialog.Builder(this)
-                .setTitle("Turn on notifications")
-                .setMessage("ShineMusic needs notifications to show the player on the lock screen and notification panel.")
-                .setPositiveButton("Open settings") { _, _ ->
-                    startActivity(
-                        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
-                    )
-                }
-                .setNegativeButton("Later", null)
-                .show()
-        }
-    }
 }
 
 @Composable
@@ -154,7 +132,6 @@ private fun App(vm: MusicViewModel) {
     UpdateDialog(vm)
     val cs = MaterialTheme.colorScheme
     var tab by remember { mutableStateOf(Tab.HOME) }
-    var libTab by remember { mutableStateOf(0) }
     var showPlayer by remember { mutableStateOf(false) }
     val song = vm.current
     val homeState = rememberLazyListState()   // keeps Home scroll position across tab switches
@@ -180,10 +157,10 @@ private fun App(vm: MusicViewModel) {
             label = "tab"
         ) { t ->
             when (t) {
-                Tab.HOME -> HomeScreen(vm, { tab = Tab.SEARCH }, { libTab = it; tab = Tab.LIBRARY }, homeState)
+                Tab.HOME -> HomeScreen(vm, { tab = Tab.SEARCH }, { tab = Tab.PLAYLIST }, homeState)
                 Tab.SEARCH -> SearchScreen(vm)
-                Tab.LIBRARY -> LibraryScreen(vm, libTab) { libTab = it }
-                Tab.RECENT -> LibraryScreen(vm, 1) { libTab = it; tab = Tab.LIBRARY }
+                Tab.PLAYLIST -> PlaylistScreen(vm, backEnabled = !showPlayer)
+                Tab.RECENT -> HistoryScreen(vm)
             }
         }
 

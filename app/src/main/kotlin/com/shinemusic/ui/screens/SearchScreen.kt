@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.shinemusic.MusicViewModel
 import com.shinemusic.ui.components.EmptyState
+import com.shinemusic.ui.components.AddToPlaylistButton
 import com.shinemusic.ui.components.SongRow
 import com.shinemusic.ui.components.glass
 
@@ -101,7 +102,9 @@ fun SearchScreen(vm: MusicViewModel) {
 
         LazyColumn(contentPadding = PaddingValues(bottom = 230.dp)) {
             itemsIndexed(vm.searchResults) { i, s ->
-                SongRow(s, vm.current?.id == s.id, vm.isPlaying, onClick = { vm.play(vm.searchResults, i) })
+                SongRow(s, vm.current?.id == s.id, vm.isPlaying, onClick = { vm.play(vm.searchResults, i) }) {
+                    AddToPlaylistButton(vm, s)
+                }
             }
         }
     }

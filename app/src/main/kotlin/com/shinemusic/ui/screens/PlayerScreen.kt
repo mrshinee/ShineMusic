@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
@@ -90,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shinemusic.MusicViewModel
 import com.shinemusic.data.Song
+import com.shinemusic.ui.components.AddToPlaylistDialog
 import com.shinemusic.ui.components.Artwork
 import com.shinemusic.ui.components.AuroraBackground
 import com.shinemusic.ui.components.EqualizerBars
@@ -115,6 +117,7 @@ fun PlayerScreen(vm: MusicViewModel, song: Song, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     var mode by remember { mutableStateOf(Mode.ART) }
     var menu by remember { mutableStateOf(false) }
+    var addToPlaylist by remember { mutableStateOf(false) }
     var scrub by remember { mutableStateOf<Float?>(null) }
 
     // Album-art accent. Falls back to the theme's indigo – never red.
@@ -259,6 +262,10 @@ fun PlayerScreen(vm: MusicViewModel, song: Song, onClose: () -> Unit) {
                                 leadingIcon = { Icon(Icons.Rounded.Shuffle, null) },
                                 onClick = { vm.toggleShuffle(); menu = false })
                             DropdownMenuItem(
+                                text = { Text("Add to playlist") },
+                                leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, null) },
+                                onClick = { menu = false; addToPlaylist = true })
+                            DropdownMenuItem(
                                 text = { Text(if (vm.sleepMinutes > 0) "Sleep timer: ${vm.sleepMinutes} min" else "Sleep timer: off") },
                                 leadingIcon = { Icon(Icons.Rounded.Bedtime, null) },
                                 onClick = {
@@ -266,6 +273,7 @@ fun PlayerScreen(vm: MusicViewModel, song: Song, onClose: () -> Unit) {
                                     menu = false
                                 })
                         }
+                        if (addToPlaylist) AddToPlaylistDialog(vm, song) { addToPlaylist = false }
                     }
                 }
             }
