@@ -21,8 +21,6 @@ import com.shinemusic.data.SaavnApi
 import com.shinemusic.data.SpotifyApi
 import com.shinemusic.data.UpdateChecker
 import com.shinemusic.data.UpdateInfo
-import com.shinemusic.data.UpdateChecker
-import com.shinemusic.data.UpdateInfo
 import com.shinemusic.data.Song
 import com.shinemusic.data.key
 import com.shinemusic.data.uniqueSongs
@@ -50,9 +48,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     var chipResults by mutableStateOf<List<Song>>(emptyList())
     var searchResults by mutableStateOf<List<Song>>(emptyList())
     var searching by mutableStateOf(false)
-
-    // ---- app update (shown as a dialog)
-    var update by mutableStateOf<UpdateInfo?>(null)
 
     // ---- library
     val favorites = mutableStateListOf<Song>()
@@ -139,19 +134,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         loadHome()
-        checkUpdate()
-    }
-
-    private fun checkUpdate() = viewModelScope.launch {
-        val info = UpdateChecker.check() ?: return@launch
-        // "Later" is remembered per version, except for forced updates
-        if (!info.force && prefs.getInt("skipped_update", 0) == info.versionCode) return@launch
-        update = info
-    }
-
-    fun dismissUpdate() {
-        update?.let { if (!it.force) prefs.edit().putInt("skipped_update", it.versionCode).apply() }
-        update = null
+        checkForUpdates()
     }
 
     /** If the service is still playing (activity was closed/recreated), rebuild UI state from the player. */
