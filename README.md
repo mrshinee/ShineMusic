@@ -20,3 +20,15 @@ with notification controls (Media3).
 - Keys go in `secrets.properties` (project root, git-ignored): `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`.
 - Client-Credentials flow (no login). Spotify = metadata/search/HD covers; audio is matched from Saavn.
 - Used for: Search tab, mood chips, and the "Fresh on Spotify" Home row. Falls back to Saavn alone if Spotify is unavailable.
+
+## Release signing
+`shinemusic.jks` + `keystore.properties` sign every release build. Never lose them; always reuse the same ones.
+Build: Android Studio -> Build -> Build APK(s) (release variant) or `./gradlew assembleRelease`
+APK: `app/build/outputs/apk/release/app-release.apk`
+
+## Updates (in-app "Update available" dialog)
+1. Host `version.json` (see `version.json.example`) somewhere with a direct link (GitHub repo raw link is fine).
+2. Put that link in `secrets.properties` as `UPDATE_URL=...` and build once.
+3. For every new release: raise `versionCode` (+1) and `versionName` in `app/build.gradle`, build, upload the new APK,
+   then edit version.json (new versionCode, apkUrl, notes). Users get the dialog on next app launch.
+   `"force": true` makes the dialog impossible to dismiss.

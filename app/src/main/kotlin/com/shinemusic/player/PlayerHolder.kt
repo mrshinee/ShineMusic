@@ -19,6 +19,6 @@ object PlayerHolder {
                         .build(), true
                 )
                 .setHandleAudioBecomingNoisy(true)
-                .build().also { player = it }
+                .build().also { player = it; PlaybackStore.attach(context, it) }
         }
 }

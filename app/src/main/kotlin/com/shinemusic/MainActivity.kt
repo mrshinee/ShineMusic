@@ -88,6 +88,7 @@ import com.shinemusic.ui.components.Artwork
 import com.shinemusic.ui.components.AuroraBackground
 import com.shinemusic.ui.components.GlassIconButton
 import com.shinemusic.ui.components.NowPlayingBadge
+import com.shinemusic.ui.components.UpdateDialog
 import com.shinemusic.ui.components.bounceClick
 import com.shinemusic.ui.components.glass
 import com.shinemusic.ui.components.rememberArtColor
@@ -113,16 +114,44 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
-        if (Build.VERSION.SDK_INT >= 33) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
             registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent { ShineTheme { App(vm) } }
     }
+
+    private var askedAboutNotifications = false
+
+    override fun onResume() {
+        super.onResume()
+        // If notifications are switched off (denied permission, or blocked in vivo settings) the
+        // lock-screen controls / island can never appear - tell the user and open the right page.
+        if (!askedAboutNotifications &&
+            !androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()
+        ) {
+            askedAboutNotifications = true
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Turn on notifications")
+                .setMessage("ShineMusic needs notifications to show the player on the lock screen and notification panel.")
+                .setPositiveButton("Open settings") { _, _ ->
+                    startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                    )
+                }
+                .setNegativeButton("Later", null)
+                .show()
+        }
+    }
 }
 
 @Composable
 private fun App(vm: MusicViewModel) {
+    UpdateDialog(vm)
     val cs = MaterialTheme.colorScheme
     var tab by remember { mutableStateOf(Tab.HOME) }
     var libTab by remember { mutableStateOf(0) }
@@ -134,6 +163,32 @@ private fun App(vm: MusicViewModel) {
 
     // The whole app picks up a tint from the song that is playing.
     val accent = rememberArtColor(song?.image, cs.primaryContainer)
+
+    // ---- "Update available" dialog
+    vm.update?.let { u ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!u.force) vm.dismissUpdate() },
+            title = { Text("Update available" + if (u.versionName.isNotBlank()) " (v${u.versionName})" else "") },
+            text = { Text(u.notes.ifBlank { "A new version of ShineMusic is ready to download." }) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    runCatching {
+                        ctx.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u.apkUrl))
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    if (!u.force) vm.dismissUpdate()
+                }) { Text("Update") }
+            },
+            dismissButton = if (u.force) null else ({
+                androidx.compose.material3.TextButton(onClick = { vm.dismissUpdate() }) { Text("Later") }
+            }),
+            properties = androidx.compose.ui.window.DialogProperties(
+                dismissOnBackPress = !u.force, dismissOnClickOutside = !u.force
+            )
+        )
+    }
 
     BackHandler(showPlayer) { showPlayer = false }
     BackHandler(!showPlayer && tab != Tab.HOME) { tab = Tab.HOME }

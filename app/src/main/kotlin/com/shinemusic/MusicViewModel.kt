@@ -14,10 +14,15 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.shinemusic.data.FavoritesStore
 import com.shinemusic.data.LrcLib
 import com.shinemusic.data.LyricLine
 import com.shinemusic.data.SaavnApi
 import com.shinemusic.data.SpotifyApi
+import com.shinemusic.data.UpdateChecker
+import com.shinemusic.data.UpdateInfo
+import com.shinemusic.data.UpdateChecker
+import com.shinemusic.data.UpdateInfo
 import com.shinemusic.data.Song
 import com.shinemusic.data.key
 import com.shinemusic.data.uniqueSongs
@@ -46,6 +51,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     var searchResults by mutableStateOf<List<Song>>(emptyList())
     var searching by mutableStateOf(false)
 
+    // ---- app update (shown as a dialog)
+    var update by mutableStateOf<UpdateInfo?>(null)
+
     // ---- library
     val favorites = mutableStateListOf<Song>()
     val recents = mutableStateListOf<Song>()
@@ -66,10 +74,20 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var homeJob: Job? = null
     private var errorStreak = 0
 
+    // ---- app updates (GitHub Releases)
+    var update by mutableStateOf<UpdateInfo?>(null)
+    var showUpdate by mutableStateOf(false)
+    var updateProgress by mutableStateOf(-1f)               // -1 = not downloading, else 0..1
+    var updateFile by mutableStateOf<java.io.File?>(null)   // set once the APK is downloaded
+    var updateError by mutableStateOf<String?>(null)
+    private var updateJob: Job? = null
+
     private var controller: MediaController? = null
 
     init {
-        loadList(prefs.getString("fav", null), favorites)
+        reloadFavorites()
+        // notification / lock-screen favorite button changes land here too
+        viewModelScope.launch { FavoritesStore.version.collect { reloadFavorites() } }
         loadList(prefs.getString("rec", null), recents)
 
         // Bind the media service so the notification + background playback work.
@@ -83,6 +101,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 isPlaying = playing
                 if (playing) errorStreak = 0
             }
+            override fun onShuffleModeEnabledChanged(enabled: Boolean) { shuffle = enabled }   // toggled from the notification
             override fun onPlayerError(error: PlaybackException) {
                 // A dead / blocked stream: skip to the next song instead of freezing. Stop if everything fails.
                 errorStreak++
@@ -120,6 +139,19 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         loadHome()
+        checkUpdate()
+    }
+
+    private fun checkUpdate() = viewModelScope.launch {
+        val info = UpdateChecker.check() ?: return@launch
+        // "Later" is remembered per version, except for forced updates
+        if (!info.force && prefs.getInt("skipped_update", 0) == info.versionCode) return@launch
+        update = info
+    }
+
+    fun dismissUpdate() {
+        update?.let { if (!it.force) prefs.edit().putInt("skipped_update", it.versionCode).apply() }
+        update = null
     }
 
     /** If the service is still playing (activity was closed/recreated), rebuild UI state from the player. */
@@ -144,6 +176,48 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         shuffle = player.shuffleModeEnabled
         repeatOne = player.repeatMode == Player.REPEAT_MODE_ONE
         current?.let { s -> viewModelScope.launch { lyrics = LrcLib.fetch(s) } }
+    }
+
+    // ---------------- app updates
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            delay(3000)                       // let Home appear first
+            val u = UpdateChecker.check() ?: return@launch
+            update = u
+            showUpdate = true
+        }
+    }
+
+    fun dismissUpdate() { showUpdate = false }
+
+    /** Download (first tap) and then install (second tap / automatically opened). */
+    fun downloadUpdate() {
+        val info = update ?: return
+        updateFile?.let { installUpdate(); return }
+        if (updateJob?.isActive == true) return
+        updateError = null
+        updateProgress = 0f
+        updateJob = viewModelScope.launch {
+            try {
+                val f = UpdateChecker.download(getApplication<Application>(), info) { updateProgress = it }
+                updateFile = f
+                updateProgress = -1f
+                showUpdate = true
+                installUpdate()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateProgress = -1f
+                updateError = "Download failed. Check your connection and try again."
+            }
+        }
+    }
+
+    fun installUpdate() {
+        val f = updateFile ?: return
+        if (!UpdateChecker.install(getApplication<Application>(), f)) {
+            Toast.makeText(getApplication<Application>(), "Allow \"Install unknown apps\" for ShineMusic, then tap Install again", Toast.LENGTH_LONG).show()
+        }
     }
 
     // ---------------- data loading
@@ -262,7 +336,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         val target = list.getOrNull(index) ?: return
 
         // Tapping the song that is already loaded just toggles it instead of restarting it.
-        if (player.mediaItemCount > 0 && player.currentMediaItem?.mediaId == target.id) {
+        // Only when the player is healthy: after an error / restart it is IDLE and play() alone does nothing,
+        // so in that case fall through and load the queue again.
+        if (player.mediaItemCount > 0 && player.currentMediaItem?.mediaId == target.id &&
+            player.playbackState != Player.STATE_IDLE && player.playerError == null
+        ) {
             if (!player.isPlaying) player.play()
             return
         }
@@ -280,7 +358,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         player.play()
     }
 
-    fun togglePlay() { if (player.isPlaying) player.pause() else player.play() }
+    fun togglePlay() {
+        if (player.isPlaying) { player.pause(); return }
+        // a restored / failed player is IDLE: it must be prepared before play() can do anything
+        if (player.playbackState == Player.STATE_IDLE && player.mediaItemCount > 0) player.prepare()
+        player.play()
+    }
     fun next() { if (player.hasNextMediaItem()) player.seekToNext() else player.seekTo(0, 0) }
     fun previous() { if (player.currentPosition > 3000) player.seekTo(0) else player.seekToPrevious() }
     fun seekTo(ms: Long) { player.seekTo(ms); positionMs = ms }
@@ -302,9 +385,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------- library
     fun isFav(s: Song?) = s != null && favorites.any { it.id == s.id }
     fun toggleFav(s: Song) {
-        val i = favorites.indexOfFirst { it.id == s.id }
-        if (i >= 0) favorites.removeAt(i) else favorites.add(0, s)
-        prefs.edit().putString("fav", toJson(favorites)).apply()
+        FavoritesStore.toggle(getApplication<Application>(), s)
+        reloadFavorites()
+    }
+    private fun reloadFavorites() {
+        val fresh = FavoritesStore.load(getApplication<Application>())
+        if (fresh.map { it.id } != favorites.map { it.id }) { favorites.clear(); favorites.addAll(fresh) }
     }
     private fun addRecent(s: Song) {
         recents.removeAll { it.id == s.id }

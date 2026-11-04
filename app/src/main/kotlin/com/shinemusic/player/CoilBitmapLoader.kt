@@ -8,7 +8,7 @@ import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.UnstableApi
-import coil.ImageLoader
+import coil.Coil
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.google.common.util.concurrent.ListenableFuture
@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 class CoilBitmapLoader(context: Context) : BitmapLoader {
 
     private val app = context.applicationContext
-    private val loader = ImageLoader(app)
+    private val loader get() = Coil.imageLoader(app)   // same cache as the covers already shown in the app
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun supportsMimeType(mimeType: String): Boolean = true

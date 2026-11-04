@@ -1,0 +1,7 @@
+{
+  "versionCode": 2,
+  "versionName": "1.1",
+  "apkUrl": "https://github.com/YOUR_NAME/ShineMusic/releases/download/v1.1/app-release.apk",
+  "notes": "- New equalizer animation\n- Bug fixes",
+  "force": false
+}

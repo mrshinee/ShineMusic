@@ -9,6 +9,12 @@ def secrets = new Properties()
 def secretsFile = rootProject.file('secrets.properties')
 if (secretsFile.exists()) secretsFile.withInputStream { secrets.load(it) }
 
+// Release signing: <project root>/keystore.properties + shinemusic.jks (git-ignored).
+// If the file is missing, release falls back to the debug key so the APK is still installable.
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('keystore.properties')
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystoreProps.load(it) }
+
 android {
     namespace 'com.shinemusic'
     compileSdk 36
@@ -23,12 +29,28 @@ android {
         buildConfigField "String", "API_BASE", "\"https://savanapi-eta.vercel.app\""
         // Comma-separated backup servers, tried in order if the main one fails or returns nothing
         buildConfigField "String", "API_FALLBACKS", "\"https://saavn.dev\""
+        // Link to your version.json (see README "Updates"). Empty = update check off.
+        buildConfigField "String", "UPDATE_URL", "\"${secrets.getProperty('UPDATE_URL', '')}\""
+        // GitHub "owner/repo" whose Releases are checked for app updates (see RELEASING.md)
+        buildConfigField "String", "UPDATE_REPO", "\"${secrets.getProperty('UPDATE_REPO', '')}\""
         buildConfigField "String", "SPOTIFY_CLIENT_ID", "\"${secrets.getProperty('SPOTIFY_CLIENT_ID', '')}\""
         buildConfigField "String", "SPOTIFY_CLIENT_SECRET", "\"${secrets.getProperty('SPOTIFY_CLIENT_SECRET', '')}\""
     }
 
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
