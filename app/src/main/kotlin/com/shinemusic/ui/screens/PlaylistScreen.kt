@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.shinemusic.MusicViewModel
+import com.shinemusic.ui.components.bottomBarSpace
 import com.shinemusic.ui.components.Artwork
 import com.shinemusic.ui.components.EmptyState
 import com.shinemusic.ui.components.GlassIconButton
@@ -85,7 +86,7 @@ private fun PlaylistList(vm: MusicViewModel, onOpen: (String) -> Unit) {
             "${vm.playlists.size + 1} playlists", style = MaterialTheme.typography.bodyMedium,
             color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)
         )
-        LazyColumn(contentPadding = PaddingValues(bottom = 230.dp)) {
+        LazyColumn(contentPadding = PaddingValues(bottom = bottomBarSpace(vm))) {
             item {
                 PlaylistRow("Create playlist", "Make a new playlist", null, Icons.Rounded.Add) { creating = true }
             }
@@ -190,7 +191,7 @@ private fun PlaylistDetail(vm: MusicViewModel, id: String, backEnabled: Boolean,
                     Icon(Icons.Rounded.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Shuffle")
                 }
             }
-            LazyColumn(contentPadding = PaddingValues(bottom = 230.dp)) {
+            LazyColumn(contentPadding = PaddingValues(bottom = bottomBarSpace(vm))) {
                 itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
                     SongRow(s, vm.current?.id == s.id, vm.isPlaying, onClick = { vm.play(songs, i) }) {
                         if (isLiked) {

@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import com.shinemusic.MusicViewModel
+import com.shinemusic.ui.components.bottomBarSpace
 import com.shinemusic.ui.components.*
 
 private val chips = listOf("Romance", "Feel good", "Relax", "Energize", "Party", "Workout", "Sad", "Focus")
@@ -70,7 +71,7 @@ fun HomeScreen(
     LazyColumn(
         Modifier.fillMaxSize(),
         state = listState,
-        contentPadding = PaddingValues(top = top + 8.dp, bottom = 230.dp)
+        contentPadding = PaddingValues(top = top + 8.dp, bottom = bottomBarSpace(vm))
     ) {
 
         // ---- top bar

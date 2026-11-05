@@ -69,6 +69,8 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    private val coverLoader by lazy { CoilBitmapLoader(this) }
+
     override fun onCreate() {
         super.onCreate()
         val player = PlayerHolder.get(this)
@@ -81,7 +83,7 @@ class PlaybackService : MediaSessionService() {
         )
         session = MediaSession.Builder(this, player)
             .setCallback(callback)
-            .setBitmapLoader(CoilBitmapLoader(this))   // cover art for notification / lock screen / media card
+            .setBitmapLoader(coverLoader)   // cover art for notification / lock screen / media card
             .build()
         session?.setCustomLayout(buildLayout())
         player.addListener(playerListener)
@@ -120,15 +122,13 @@ class PlaybackService : MediaSessionService() {
         )
     }
 
-    /** Warm the image cache for the current + next songs so the notification cover appears instantly. */
+    /** Warm the cover cache for the current + next songs so the lock-screen cover appears instantly. */
     private fun prefetchCovers() {
         val p = PlayerHolder.get(this)
-        val loader = Coil.imageLoader(this)
         val i = p.currentMediaItemIndex
         for (idx in listOf(i, p.nextMediaItemIndex)) {
             if (idx < 0 || idx >= p.mediaItemCount) continue
-            val uri = p.getMediaItemAt(idx).mediaMetadata.artworkUri ?: continue
-            loader.enqueue(ImageRequest.Builder(this).data(uri.toString()).size(512, 512).allowHardware(false).build())
+            coverLoader.prefetch(p.getMediaItemAt(idx).mediaMetadata.artworkUri)
         }
     }
 

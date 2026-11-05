@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.shinemusic.MusicViewModel
+import com.shinemusic.ui.components.bottomBarSpace
 import com.shinemusic.ui.components.EmptyState
 import com.shinemusic.ui.components.SongRow
 
@@ -42,7 +43,7 @@ fun HistoryScreen(vm: MusicViewModel) {
                 subtitle = "Songs you listen to will appear here"
             )
         } else {
-            LazyColumn(contentPadding = PaddingValues(bottom = 230.dp)) {
+            LazyColumn(contentPadding = PaddingValues(bottom = bottomBarSpace(vm))) {
                 itemsIndexed(list) { i, s ->
                     SongRow(s, vm.current?.id == s.id, vm.isPlaying, onClick = { vm.play(list, i) }) {
                         if (vm.isFav(s)) {
