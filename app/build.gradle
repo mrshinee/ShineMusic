@@ -24,7 +24,7 @@ android {
         minSdk 24
         targetSdk 34
         versionCode 5
-        versionName "1.5"
+        versionName "1.4"
         // JioSaavn-style API base URL (no trailing slash)
         buildConfigField "String", "API_BASE", "\"https://savanapi-eta.vercel.app\""
         // Comma-separated backup servers, tried in order if the main one fails or returns nothing
