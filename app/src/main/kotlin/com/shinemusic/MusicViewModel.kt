@@ -16,7 +16,11 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.shinemusic.data.FavoritesStore
 import com.shinemusic.data.LrcLib
+import com.shinemusic.data.HomeCache
+import com.shinemusic.data.HomeFeed
 import com.shinemusic.data.LyricLine
+import com.shinemusic.data.Mood
+import com.shinemusic.data.Taste
 import com.shinemusic.data.Playlist
 import com.shinemusic.data.PlaylistStore
 import com.shinemusic.data.SaavnApi
@@ -70,6 +74,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var searchJob: Job? = null
     private var chipJob: Job? = null
     private var homeJob: Job? = null
+    private var taste: Taste.Profile = Taste.load(getApplication<Application>())
+    private var songsSinceRefresh = 0
+    private val moodById = HashMap<String, Mood>()
     private var errorStreak = 0
 
     // ---- app updates (GitHub Releases)
@@ -121,6 +128,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 current = s
                 positionMs = 0L
                 addRecent(s)
+                onSongPlayed(s)
                 viewModelScope.launch { lyrics = emptyList(); lyrics = LrcLib.fetch(s) }
             }
             override fun onPlaybackStateChanged(state: Int) {
@@ -137,7 +145,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 delay(250)
             }
         }
-        loadHome()
+        // Show the last Home instantly, refresh in the background when it is older than 30 minutes.
+        val cached = HomeCache.load(app)
+        if (cached != null) { sections = cached.first; indexSections(cached.first); loadingHome = false }
+        if (cached == null || System.currentTimeMillis() - cached.second > HOME_STALE_MS) loadHome()
         checkForUpdates()
     }
 
@@ -208,37 +219,62 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------------- data loading
+    /** Learns what you play and refreshes Home every [REFRESH_EVERY] songs so it follows your taste. */
+    private fun onSongPlayed(s: Song) {
+        val mood = moodById[s.id] ?: Taste.classify(s)
+        Taste.record(taste, s, mood)
+        Taste.save(getApplication<Application>(), taste)
+        if (++songsSinceRefresh >= REFRESH_EVERY) {
+            songsSinceRefresh = 0
+            loadHome()
+        }
+    }
+
+    private fun indexSections(list: List<Pair<String, List<Song>>>) {
+        moodById.clear()
+        list.forEach { (title, songs) ->
+            Mood.values().firstOrNull { it.title == title }?.let { m -> songs.forEach { moodById[it.id] = m } }
+        }
+    }
+
+    /** One query: Spotify first, Saavn if Spotify is off / empty / slower than 5 s. */
+    private suspend fun source(q: String, n: Int): List<Song> = runCatching {
+        val sp = if (SpotifyApi.enabled) withTimeoutOrNull(5000) { SpotifyApi.searchSongs(q, n) }.orEmpty() else emptyList()
+        if (sp.size >= 3) sp else SaavnApi.search(if (':' in q) "new hindi songs" else q, n)
+    }.getOrDefault(emptyList())
+
+    private suspend fun feed(queries: List<String>, n: Int): List<Song> = coroutineScope {
+        interleave(queries.map { q -> async { source(q, n) } }.map { it.await() }).uniqueSongs()
+    }
+
     fun loadHome() {
         homeJob?.cancel()
         homeJob = viewModelScope.launch {
             loadingHome = true
-            val defs = listOf(
-                "Punjabi vibes" to "punjabi hits",
-                "Romantic" to "romantic hindi",
-                "Party mode" to "party songs",
-                "Chill & lo-fi" to "lofi chill"
-            )
-            val restJobs = defs.map { (t, q) -> async { t to SaavnApi.search(q, 25) } }
+            val rnd = kotlin.random.Random(System.currentTimeMillis())
+            val weights = Taste.weights(taste)
+            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
 
-            // Quick picks come from Spotify (two genre queries + two popular artists, interleaved for variety).
-            // Saavn is only the fallback if Spotify is off, limited, or too slow (5 s).
-            val spotifyHero = async<List<Song>> {
-                if (!SpotifyApi.enabled) emptyList()
-                else {
-                    val lists = listOf(
-                        "year:2026 genre:bollywood", "year:2025-2026 genre:indian", "arijit singh", "diljit dosanjh"
-                    ).map { q -> async { SpotifyApi.searchSongs(q, 10) } }.map { it.await() }
-                    interleave(lists)
-                }
+            // Sections you play most (and the ones that suit the time of day) come first.
+            val order = Mood.values().sortedByDescending { m ->
+                (weights[m] ?: 0.0) * 1.5 + HomeFeed.timeBoost(m, hour) + rnd.nextDouble() * 0.1
             }
-            val saavnHero = async {
-                listOf("trending hindi songs", "latest bollywood hits", "new hindi songs", "top bollywood songs")
-                    .map { q -> async { SaavnApi.search(q, 20) } }.flatMap { it.await() }
+            val moodJobs = order.map { m -> async { m to feed(HomeFeed.pool(m).shuffled(rnd).take(2), 15) } }
+
+            // Quick picks: your top artists + your top mood + fresh trending queries.
+            val artists = Taste.topArtists(taste, 2)
+            val heroQueries = buildList {
+                addAll(artists)
+                if (artists.isNotEmpty()) add(HomeFeed.pool(order.first()).random(rnd))
+                addAll(HomeFeed.QUICK.shuffled(rnd).take(if (artists.isEmpty()) 3 else 2))
             }
+            val heroJob = async { feed(heroQueries, 10).distinctBy { it.image } }
 
             // One shared "seen" set: a song can appear only once on the whole home screen.
+            // The last 10 songs you played are skipped so Home always feels new.
             val seen = HashSet<String>()
             val seenIds = HashSet<String>()
+            recents.take(10).forEach { seenIds.add(it.id); seen.add(it.key()) }
             fun takeFresh(src: List<Song>, max: Int): List<Song> {
                 val out = ArrayList<Song>()
                 for (s in src) {
@@ -248,25 +284,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 return out
             }
 
-            val fromSpotify = (withTimeoutOrNull(5000) { spotifyHero.await() } ?: emptyList())
-                .uniqueSongs().distinctBy { it.image }
-            val hero = if (fromSpotify.size >= 4) takeFresh(fromSpotify, 12) else {
-                val all = saavnHero.await().uniqueSongs()
-                val distinctCovers = all.distinctBy { it.image }
-                takeFresh(if (distinctCovers.size >= 4) distinctCovers else all, 12)
-            }
-            val rest = restJobs.map { it.await() }.map { (t, list) -> t to takeFresh(list, 20) }
+            val hero = takeFresh(heroJob.await(), 12)
+            val rest = moodJobs.map { it.await() }.map { (m, list) -> m.title to takeFresh(list, 20) }
 
             val result = (listOf("Quick picks" to hero) + rest).filter { it.second.isNotEmpty() }
             // keep the old content if a refresh failed completely
-            if (result.isNotEmpty() || sections.isEmpty()) sections = result
+            if (result.isNotEmpty() || sections.isEmpty()) {
+                sections = result
+                indexSections(result)
+                HomeCache.save(getApplication<Application>(), result)
+            }
             loadingHome = false
 
             // Spotify row loads afterwards so it never delays the first paint.
             if (SpotifyApi.enabled) {
-                val queries = listOf("new hindi songs", "latest punjabi songs", "romantic hindi")
                 var picks: List<Song> = emptyList()
-                for (q in queries) {
+                for (q in HomeFeed.FRESH.shuffled(rnd).take(3)) {
                     picks = takeFresh(SpotifyApi.searchSongs(q, 20), 15)
                     if (picks.size >= 3) break
                 }
@@ -274,6 +307,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     val list = sections.toMutableList()
                     list.add(minOf(2, list.size), "Fresh on Spotify" to picks)
                     sections = list
+                    HomeCache.save(getApplication<Application>(), list)
                 }
             }
         }
@@ -452,5 +486,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     it.getString("i"), it.getString("u"), it.optInt("d")))
             }
         }
+    }
+
+    private companion object {
+        const val REFRESH_EVERY = 5
+        const val HOME_STALE_MS = 30 * 60 * 1000L
     }
 }
