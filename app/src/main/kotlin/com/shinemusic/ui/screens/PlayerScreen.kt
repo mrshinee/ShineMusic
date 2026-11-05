@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Repeat
@@ -91,6 +92,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shinemusic.MusicViewModel
 import com.shinemusic.data.Song
+import com.shinemusic.data.Downloads
 import com.shinemusic.ui.components.AddToPlaylistDialog
 import com.shinemusic.ui.components.Artwork
 import com.shinemusic.ui.components.AuroraBackground
@@ -261,6 +263,23 @@ fun PlayerScreen(vm: MusicViewModel, song: Song, onClose: () -> Unit) {
                                 text = { Text(if (vm.shuffle) "Shuffle: on" else "Shuffle: off") },
                                 leadingIcon = { Icon(Icons.Rounded.Shuffle, null) },
                                 onClick = { vm.toggleShuffle(); menu = false })
+                            DropdownMenuItem(
+                                text = {
+                                    val pr = Downloads.progress[song.id]
+                                    Text(
+                                        when {
+                                            pr != null -> "Downloading ${(pr * 100).toInt()}%"
+                                            Downloads.isDownloaded(song.id) -> "Downloaded - tap to remove"
+                                            else -> "Download"
+                                        }
+                                    )
+                                },
+                                leadingIcon = { Icon(Icons.Rounded.Download, null) },
+                                enabled = Downloads.progress[song.id] == null,
+                                onClick = {
+                                    menu = false
+                                    if (Downloads.isDownloaded(song.id)) vm.removeDownload(song) else vm.downloadSong(song)
+                                })
                             DropdownMenuItem(
                                 text = { Text("Add to playlist") },
                                 leadingIcon = { Icon(Icons.Rounded.PlaylistAdd, null) },

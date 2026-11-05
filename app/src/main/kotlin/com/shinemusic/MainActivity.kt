@@ -11,6 +11,8 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -85,6 +87,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shinemusic.data.AppSettings
 import com.shinemusic.ui.components.Artwork
 import com.shinemusic.ui.components.AuroraBackground
 import com.shinemusic.ui.components.GlassIconButton
@@ -98,6 +101,7 @@ import com.shinemusic.ui.screens.HistoryScreen
 import com.shinemusic.ui.screens.PlaylistScreen
 import com.shinemusic.ui.screens.PlayerScreen
 import com.shinemusic.ui.screens.SearchScreen
+import com.shinemusic.ui.screens.SettingsScreen
 import com.shinemusic.ui.theme.ShineTheme
 
 private enum class Tab(val label: String, val icon: ImageVector) {
@@ -123,7 +127,13 @@ class MainActivity : ComponentActivity() {
             registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        setContent { ShineTheme { App(vm) } }
+        AppSettings.init(this)
+        setContent {
+            // "Dynamic colour": the whole app takes the colour of the playing album art
+            val song = vm.current
+            val art = rememberArtColor(song?.image, AppSettings.accentColor())
+            ShineTheme(artTint = if (AppSettings.dynamicColor && song != null) art else null) { App(vm) }
+        }
     }
 }
 
@@ -133,6 +143,7 @@ private fun App(vm: MusicViewModel) {
     val cs = MaterialTheme.colorScheme
     var tab by remember { mutableStateOf(Tab.HOME) }
     var showPlayer by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     val song = vm.current
     val homeState = rememberLazyListState()   // keeps Home scroll position across tab switches
     val ctx = LocalContext.current
@@ -145,14 +156,19 @@ private fun App(vm: MusicViewModel) {
     BackHandler(!showPlayer && tab != Tab.HOME) { tab = Tab.HOME }
 
     Box(Modifier.fillMaxSize()) {
-        AuroraBackground(accent = accent)
+        if (AppSettings.blurBackground) AuroraBackground(accent = accent)
+        else Box(Modifier.fillMaxSize().background(cs.background))
 
         AnimatedContent(
             targetState = tab,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                (fadeIn(tween(300, delayMillis = 70)) + scaleIn(initialScale = 0.96f, animationSpec = tween(300, delayMillis = 70))) togetherWith
-                    fadeOut(tween(140))
+                if (AppSettings.reduceAnimations) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    (fadeIn(tween(300, delayMillis = 70)) + scaleIn(initialScale = 0.96f, animationSpec = tween(300, delayMillis = 70))) togetherWith
+                        fadeOut(tween(140))
+                }
             },
             label = "tab"
         ) { t ->
@@ -187,7 +203,7 @@ private fun App(vm: MusicViewModel) {
                 Spacer(Modifier.width(12.dp))
                 GlassIconButton(
                     Icons.Rounded.MoreHoriz,
-                    { Toast.makeText(ctx, "Coming soon", Toast.LENGTH_SHORT).show() },
+                    { showSettings = true },
                     size = 68.dp, shape = RoundedCornerShape(26.dp), scrim = 0.9f, contentDescription = "More"
                 )
             }
@@ -199,6 +215,14 @@ private fun App(vm: MusicViewModel) {
             exit = slideOutVertically(tween(280, easing = FastOutLinearInEasing)) { it } + fadeOut(tween(240))
         ) {
             if (song != null) PlayerScreen(vm, song) { showPlayer = false }
+        }
+
+        AnimatedVisibility(
+            visible = showSettings,
+            enter = slideInVertically(tween(if (AppSettings.reduceAnimations) 0 else 320)) { it } + fadeIn(tween(if (AppSettings.reduceAnimations) 0 else 200)),
+            exit = slideOutVertically(tween(if (AppSettings.reduceAnimations) 0 else 260)) { it } + fadeOut(tween(if (AppSettings.reduceAnimations) 0 else 200))
+        ) {
+            SettingsScreen(vm) { showSettings = false }
         }
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -16,11 +17,14 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.shinemusic.data.FavoritesStore
 import com.shinemusic.data.LrcLib
+import com.shinemusic.data.AppSettings
+import com.shinemusic.data.Downloads
 import com.shinemusic.data.HomeCache
 import com.shinemusic.data.HomeFeed
 import com.shinemusic.data.LyricLine
 import com.shinemusic.data.Mood
 import com.shinemusic.data.Taste
+import com.shinemusic.player.PlayerEffects
 import com.shinemusic.data.Playlist
 import com.shinemusic.data.PlaylistStore
 import com.shinemusic.data.SaavnApi
@@ -145,6 +149,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 delay(250)
             }
         }
+        Downloads.init(app)
+        // settings -> player: speed, skip silence, unplug, equalizer, bass, normalization
+        viewModelScope.launch {
+            snapshotFlow {
+                listOf(AppSettings.speed, AppSettings.skipSilence, AppSettings.pauseOnUnplug, AppSettings.eqEnabled,
+                    AppSettings.eqPreset, AppSettings.eqLevels, AppSettings.bassBoost, AppSettings.normalize)
+            }.collect { PlayerEffects.apply(player) }
+        }
+        // fade out / fade in around song changes
+        viewModelScope.launch { while (true) { delay(250); fadeTick() } }
         // Show the last Home instantly, refresh in the background when it is older than 30 minutes.
         val cached = HomeCache.load(app)
         if (cached != null) { sections = cached.first; indexSections(cached.first); loadingHome = false }
@@ -403,6 +417,36 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------------- crossfade (fade out the end of a song, fade in the next one)
+    private var faded = false
+    private fun fadeTick() {
+        val sec = AppSettings.crossfadeSec
+        if (sec <= 0) {
+            if (faded) { player.volume = 1f; faded = false }
+            return
+        }
+        if (!player.isPlaying) return
+        val dur = player.duration
+        if (dur <= 0) return
+        val fade = minOf(sec * 1000L, dur / 2).coerceAtLeast(1L)
+        val pos = player.currentPosition
+        val vol = minOf(1f, (dur - pos).toFloat() / fade, pos.toFloat() / fade).coerceIn(0.1f, 1f)
+        if (kotlin.math.abs(player.volume - vol) > 0.02f) { player.volume = vol; faded = true }
+    }
+
+    // ---------------- downloads
+    fun downloadSong(s: Song) {
+        val app = getApplication<Application>()
+        if (Downloads.isDownloaded(s.id)) return
+        viewModelScope.launch {
+            Toast.makeText(app, "Downloading ${s.title}", Toast.LENGTH_SHORT).show()
+            val err = Downloads.download(app, s)
+            Toast.makeText(app, err ?: "Downloaded ${s.title}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    fun removeDownload(s: Song) = Downloads.remove(getApplication<Application>(), s.id)
+    fun clearDownloads() = Downloads.clear(getApplication<Application>())
+
     // ---------------- playlists
     private fun savePlaylists() = PlaylistStore.save(getApplication<Application>(), playlists.toList())
 
@@ -464,7 +508,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------- helpers
     private fun Song.toMediaItem() = MediaItem.Builder()
         .setMediaId(id)
-        .setUri(url)
+        .setUri(
+            Downloads.localUri(getApplication<Application>(), id)?.toString()
+                ?: AppSettings.urlFor(url, AppSettings.audioQuality)
+        )
         .setMediaMetadata(
             MediaMetadata.Builder().setTitle(title).setArtist(artist)
                 .apply { if (image.isNotBlank()) setArtworkUri(android.net.Uri.parse(image)) }.build()

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MoreVert
@@ -53,6 +54,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.shinemusic.MusicViewModel
+import com.shinemusic.data.Downloads
 import com.shinemusic.ui.components.bottomBarSpace
 import com.shinemusic.ui.components.Artwork
 import com.shinemusic.ui.components.EmptyState
@@ -62,6 +64,7 @@ import com.shinemusic.ui.components.SongRow
 import com.shinemusic.ui.components.glass
 
 private const val LIKED = "__liked__"
+private const val DOWNLOADS = "__downloads__"
 
 /** Playlist tab: list of playlists (Liked songs first) -> tap one to open its songs. */
 @Composable
@@ -92,6 +95,9 @@ private fun PlaylistList(vm: MusicViewModel, onOpen: (String) -> Unit) {
             }
             item {
                 PlaylistRow("Liked songs", "${vm.favorites.size} songs", null, Icons.Rounded.Favorite) { onOpen(LIKED) }
+            }
+            item {
+                PlaylistRow("Downloads", "${Downloads.songs.size} songs - offline", null, Icons.Rounded.Download) { onOpen(DOWNLOADS) }
             }
             items(vm.playlists.toList(), key = { it.id }) { p ->
                 PlaylistRow(p.name, "${p.songs.size} songs", p.songs.firstOrNull()?.image, Icons.Rounded.PlaylistPlay) {
@@ -143,17 +149,22 @@ private fun PlaylistRow(title: String, subtitle: String, coverUrl: String?, icon
 private fun PlaylistDetail(vm: MusicViewModel, id: String, backEnabled: Boolean, onBack: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val isLiked = id == LIKED
+    val isDownloads = id == DOWNLOADS
     val pl = vm.playlists.firstOrNull { it.id == id }
 
     BackHandler(enabled = backEnabled, onBack = onBack)
 
-    if (!isLiked && pl == null) {          // deleted -> go back to the list
+    if (!isLiked && !isDownloads && pl == null) {          // deleted -> go back to the list
         LaunchedEffect(Unit) { onBack() }
         return
     }
 
-    val songs = if (isLiked) vm.favorites.toList() else pl!!.songs
-    val name = if (isLiked) "Liked songs" else pl!!.name
+    val songs = when {
+        isLiked -> vm.favorites.toList()
+        isDownloads -> Downloads.songs.toList()
+        else -> pl!!.songs
+    }
+    val name = when { isLiked -> "Liked songs"; isDownloads -> "Downloads"; else -> pl!!.name }
     var menu by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -166,7 +177,7 @@ private fun PlaylistDetail(vm: MusicViewModel, id: String, backEnabled: Boolean,
                 Text(name, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${songs.size} songs", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
             }
-            if (!isLiked) {
+            if (!isLiked && !isDownloads) {
                 Box {
                     GlassIconButton(Icons.Rounded.MoreVert, { menu = true }, contentDescription = "More")
                     DropdownMenu(menu, { menu = false }) {
@@ -194,7 +205,11 @@ private fun PlaylistDetail(vm: MusicViewModel, id: String, backEnabled: Boolean,
             LazyColumn(contentPadding = PaddingValues(bottom = bottomBarSpace(vm))) {
                 itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
                     SongRow(s, vm.current?.id == s.id, vm.isPlaying, onClick = { vm.play(songs, i) }) {
-                        if (isLiked) {
+                        if (isDownloads) {
+                            IconButton(onClick = { vm.removeDownload(s) }) {
+                                Icon(Icons.Rounded.Delete, "Delete download", tint = cs.onSurfaceVariant)
+                            }
+                        } else if (isLiked) {
                             IconButton(onClick = { vm.toggleFav(s) }) {
                                 Icon(Icons.Rounded.Favorite, "Unlike", tint = cs.tertiary)
                             }
@@ -208,10 +223,13 @@ private fun PlaylistDetail(vm: MusicViewModel, id: String, backEnabled: Boolean,
             }
         } else {
             EmptyState(
-                icon = if (isLiked) Icons.Rounded.Favorite else Icons.Rounded.PlaylistAdd,
-                title = if (isLiked) "No liked songs yet" else "This playlist is empty",
-                subtitle = if (isLiked) "Tap the heart on any song and it will show up here"
-                else "Add songs with the playlist button in Search or in the player menu"
+                icon = when { isLiked -> Icons.Rounded.Favorite; isDownloads -> Icons.Rounded.Download; else -> Icons.Rounded.PlaylistAdd },
+                title = when { isLiked -> "No liked songs yet"; isDownloads -> "No downloads yet"; else -> "This playlist is empty" },
+                subtitle = when {
+                    isLiked -> "Tap the heart on any song and it will show up here"
+                    isDownloads -> "Open a song and choose Download in the player menu"
+                    else -> "Add songs with the playlist button in Search or in the player menu"
+                }
             )
         }
     }

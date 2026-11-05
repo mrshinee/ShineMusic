@@ -63,7 +63,7 @@ object PlaybackStore {
     }
 
     private fun restore(context: Context, player: Player) {
-        if (player.mediaItemCount > 0) return
+        if (player.mediaItemCount > 0 || !com.shinemusic.data.AppSettings.resumeLast) return
         val sp = context.getSharedPreferences(PREFS, 0)
         val json = sp.getString("items", null) ?: return
         runCatching {

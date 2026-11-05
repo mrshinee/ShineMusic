@@ -148,17 +148,21 @@ fun AuroraBackground(
     accent: Color,
     modifier: Modifier = Modifier,
     forceDark: Boolean? = null,
-    intensity: Float = 1f
+    intensity: Float = 1f,
+    animate: Boolean = !com.shinemusic.data.AppSettings.reduceAnimations
 ) {
     val cs = MaterialTheme.colorScheme
     val dark = forceDark ?: cs.isDark
     val base = if (forceDark == true) Color.Black else cs.background
-    val transition = rememberInfiniteTransition(label = "aurora")
-    val t by transition.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(30000, easing = LinearEasing), RepeatMode.Restart),
-        label = "t"
-    )
+    val t = if (animate) {
+        val transition = rememberInfiniteTransition(label = "aurora")
+        val v by transition.animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(30000, easing = LinearEasing), RepeatMode.Restart),
+            label = "t"
+        )
+        v
+    } else 0f
     val second = cs.tertiary
     val third = cs.primary
     val a1 = if (dark) 0.22f else 0.38f

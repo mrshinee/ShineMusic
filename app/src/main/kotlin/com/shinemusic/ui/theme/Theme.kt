@@ -8,6 +8,13 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import com.shinemusic.data.AppSettings
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -88,9 +95,72 @@ private val ShineShapes = Shapes(
 
 val ColorScheme.isDark: Boolean get() = background.luminance() < 0.5f
 
+private val LightScheme = lightColorScheme(
+    primary = Color(0xFF3F51B5),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFDDE1FF),
+    onPrimaryContainer = Color(0xFF0B1450),
+    secondary = Color(0xFF5A5F7A),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFE3E5F5),
+    onSecondaryContainer = Color(0xFF1B2040),
+    tertiary = Color(0xFFB0306F),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFFD9EE),
+    onTertiaryContainer = Color(0xFF3B0A28),
+    background = Color(0xFFF8F8FC),
+    onBackground = Color(0xFF16161C),
+    surface = Color(0xFFF8F8FC),
+    onSurface = Color(0xFF16161C),
+    surfaceVariant = Color(0xFFE6E6EE),
+    onSurfaceVariant = Color(0xFF4A4A57),
+    outline = Color(0xFF7A7A88),
+    outlineVariant = Color(0xFFD0D0DA),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF2F2F8),
+    surfaceContainer = Color(0xFFECECF3),
+    surfaceContainerHigh = Color(0xFFE6E6EE),
+    surfaceContainerHighest = Color(0xFFDFDFE8)
+)
+
+/** Re-colours the primary family with one accent (light themes get a darker shade for contrast). */
+private fun ColorScheme.withAccent(accent: Color, dark: Boolean): ColorScheme {
+    val a = if (dark) accent else lerp(accent, Color.Black, 0.35f)
+    val on = if (a.luminance() > 0.45f) Color(0xFF101018) else Color.White
+    return copy(
+        primary = a,
+        onPrimary = on,
+        primaryContainer = lerp(background, a, if (dark) 0.30f else 0.20f),
+        onPrimaryContainer = if (dark) lerp(a, Color.White, 0.75f) else lerp(a, Color.Black, 0.65f)
+    )
+}
+
+/**
+ * [artTint]: colour of the playing album art (only when "Dynamic colour" is on); it replaces the accent.
+ * Theme mode and accent come from [AppSettings].
+ */
 @Composable
-fun ShineTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Amoled, typography = ShineTypography, shapes = ShineShapes) {
+fun ShineTheme(artTint: Color? = null, content: @Composable () -> Unit) {
+    val mode = AppSettings.themeMode
+    val dark = mode == 0 || (mode == 2 && isSystemInDarkTheme())
+    val base = if (dark) Amoled else LightScheme
+    val scheme = when {
+        artTint != null -> base.withAccent(if (dark) lerp(artTint, Color.White, 0.5f) else artTint, dark)
+        AppSettings.accentIndex != 0 -> base.withAccent(AppSettings.accentColor(), dark)
+        else -> base
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+            val c = WindowCompat.getInsetsController(window, view)
+            c.isAppearanceLightStatusBars = !dark
+            c.isAppearanceLightNavigationBars = !dark
+        }
+    }
+
+    MaterialTheme(colorScheme = scheme, typography = ShineTypography, shapes = ShineShapes) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
